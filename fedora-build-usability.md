@@ -1,7 +1,10 @@
 # Fedora as a developer-first build platform
 
-Working document. Status: brainstorm / early framing.
-(Also: making `mock` and `dist-git` tools developers *want* to use.)
+*A proposal to make `mock` and `dist-git` tools developers want to use — and to
+turn Fedora's build system into a shared component registry for the Linux
+ecosystem.*
+
+Status: draft for discussion.
 
 ## Vision
 
@@ -103,13 +106,14 @@ one while regressing the other is not acceptable.
 | **Portage / Gentoo** | Richest *distro-native* constraint language: versioned deps, **SLOTs** (parallel versions), **USE flags** (conditional completion), and it fetches + builds from upstream at build time. Exposes the friction of wrapping cargo/npm (historic giant `CRATES=` lists). |
 | **Spack** (HPC) | "Declare version-dependent constraints, then *concretize a spec*" into any of many coexisting variants. Sits deliberately between distro and language ecosystem on every question — a non-distro fourth data point. |
 
-## Key framing points (captured from discussion)
+## Key framing points
 
 - **Q4 is a friction gradient, not a binary.** Fedora *can* carry multiple
   versions (compat packages with version-bearing names like `rust-pyo3_0.25` vs
   `rust-pyo3`, `compat-openssl11`, parallel `python3.x`) via virtual Provides so
   dependents resolve correctly. It's possible but exceptional and high-friction.
-  We must lead with this or critics will use it against the proposal.
+  Stating this plainly matters: Fedora already supports multi-version coexistence —
+  just at high, manual cost.
 
 - **Name-encoded versioning is a shared technique.** Fedora's versioned package
   names and Go's semantic import versioning (`.../v2`) are the *same move*: push
@@ -117,8 +121,8 @@ one while regressing the other is not acceptable.
   automates.
 
 - **Two language-ecosystem sub-models.** *Float-within-a-range* (cargo, npm, pip)
-  vs. *name-a-stream* (Go). Both beat Fedora's flattening, for different reasons.
-  Keep them distinct to resist critique.
+  vs. *name-a-stream* (Go). Both beat Fedora's flattening, for different reasons,
+  and are worth keeping distinct.
 
 - **The "one place to fix a CVE" justification conflates two things:**
   *topology* (how many copies exist) vs. *maintenance* (whether each copy is
@@ -176,12 +180,13 @@ developers.
    the "cache" is simply the builds already produced from that manifest. This is
    also what makes multi-version safe for C/C++.
 
-4. **Follow streams; do not pin.** There is no developer-committed lockfile —
-   reproducibility is not a project goal and lockfiles are unwelcome to Fedora
-   maintainers. It is enough to follow a stream as long as it stays compatible.
-   The *stream branch itself is the compatibility contract*, maintained by people:
-   a Fedora maintainer holds back or reverts a bad upstream patch, which is exactly
-   their strength. Picking up security patches simply means following the branch.
+4. **Follow streams; do not pin.** There is no developer-committed lockfile; it is
+   enough to follow a stream as long as it stays compatible. The *stream branch
+   itself is the compatibility contract*, maintained by people: a Fedora maintainer
+   holds back or reverts a bad upstream patch, which is exactly their strength.
+   Picking up security patches simply means following the branch. Reproducibility is
+   handled exactly as the distribution handles it today — via retained source RPMs —
+   so this proposal neither weakens nor re-invents it.
 
 5. **The platform is a floor, not a pin.** The base (a Fedora release) supplies a
    coherent set of inputs and sets a *floor* on versions. Going newer than the
@@ -327,17 +332,17 @@ is visible at a glance.
   a lockfile. The proposal is the only row that **drops committed pinning** (Q5 =
   none) and instead relies on maintained streams (Q7) plus build provenance (Q8).
   This is the most novel and most scrutinized cell: the claim is that *maintained
-  stream + provenance* substitutes for *lockfile*. Be ready to defend it.
+  stream + provenance* substitutes for *lockfile*. The next section examines it.
 
 ## Anticipated challenges from Fedora maintainers (the Q5+Q7 bet)
 
 The design makes one genuinely novel bet: drop the committed lockfile (Q5 = none)
 and rely instead on human-maintained streams (Q7) plus build provenance (Q8).
-These are the objections to expect, stated at full strength. Status tags mark how
-well the doc currently answers each.
+Below, each anticipated objection is stated at full strength, followed by our
+response.
 
-1. **"You've multiplied my maintenance surface, not reduced it."** *(central;
-   answered)* Many concurrent stream branches per component each need continuous
+1. **"You've multiplied my maintenance surface, not reduced it."** *(the central
+   objection)* Many concurrent stream branches per component each need continuous
    **gatekeeping** — simultaneous CVE triage/backport across streams and
    compatibility-vetting every upstream point release before it lands on a branch.
    Branch *creation* is automated; this *gatekeeping* is not. The model shifts a
@@ -353,7 +358,7 @@ well the doc currently answers each.
      upstream actually tested, this system should produce *fewer untested
      combinations* and therefore *less* patch management, not more.
 
-2. **"Bundling makes remediation O(apps)."** *(answered)* In the shared-library
+2. **"Bundling makes remediation O(apps)."** In the shared-library
    world a CVE is patched once and everything relinks. With private per-application
    closures, the same CVE requires **every affected image to be rebuilt, reshipped,
    and re-pulled** — remediation effort scales with the number of embedding apps,
@@ -367,7 +372,7 @@ well the doc currently answers each.
      labor, which is the more serious security problem. Trading compute for labor is
      the right trade.
 
-3. **"No pin means you can't reproduce or review a change."** *(answered)* Without a
+3. **"No pin means you can't reproduce or review a change."** Without a
    committed lockfile, inputs drift implicitly: a build that worked last week may
    differ today, with no committed artifact to deterministically recreate it, and no
    explicit diff to review/gate a dependency change.
@@ -378,15 +383,7 @@ well the doc currently answers each.
      Lockfiles are not used in Fedora's current systems, and a new container-image
      build system need not require features the existing distribution lacks.
 
-4. **"'Reproducibility isn't a goal' swims against the tide."** *(answered)* The
-   supply-chain world (SLSA, attestation, verification) is moving toward *more*
-   pinning/verifiability; a non-goal stance may read as regressive.
-   - **Response:** Same mechanism as #3 — the private RPM repo retains the source
-     RPMs used/created in a given application build, so a build can be reproduced by
-     selecting those source RPMs. Provenance-via-SRPMs provides the verifiable
-     record without mandating a new lockfile artifact.
-
-5. **"Discoverability is only as good as the SBOM — and that's hard."** *(answered)*
+4. **"Discoverability is only as good as the SBOM — and that's hard."**
    Provenance-based discoverability requires every image's SBOM to be complete,
    accurate, retained, and queryable at fleet scale.
    - **Response:** The **private RPM repo** (everything above the floor) together
@@ -395,7 +392,7 @@ well the doc currently answers each.
      a query over authoritative data (base SBOM ∪ private repo), not a
      reverse-engineering problem.
 
-6. **"Who enforces EOL, and what's the bifurcation cost?"** *(answered)* Apps that
+5. **"Who enforces EOL, and what's the bifurcation cost?"** Apps that
    keep following an EOL'd stream become a silent hole; and two dependency worlds
    (stream-following closures vs. single-version shared libs) mean two security
    processes and two mental models for responders.
@@ -415,48 +412,39 @@ well the doc currently answers each.
      developers with the tools to build software*. The second dependency world is
      not a regrettable side effect; it is the deliverable.
 
-Status: all six have responses. The two that were previously unanswered (#2
-rebuild fan-out, #3 reproducibility/change-control) now rest on the same base:
-*Fedora already rebuilds containers, labor is scarcer than compute, and source
-RPMs provide reproduction and provenance without a lockfile.* See also the broader
-vision surfaced in #6 (Fedora as provider of a developer-first shared component
-registry), a candidate for the document's framing.
+Three ideas carry most of the weight across these responses: Fedora already
+rebuilds containers for remediation, human labor is scarcer than compute, and
+source RPMs provide both reproduction and provenance without a lockfile. The
+deepest point is #5 — the second dependency world is not a cost to be excused but
+the deliverable: the shared component registry described in the Vision.
 
-## Open threads / to do
+## Design decisions so far
 
-- [x] Decide the spine: **decouple applications from the OS** (usability + security
-      unified). Not a distribution replacement; an application layer on a classic base.
-- [x] Articulate the target workflow as principles (done — see section above).
-      Source+stream, follow-don't-pin, platform-as-floor, ship-as-images.
-- [x] Store population & maintenance — reframed: the "store" is stream-branched
-      *source*; binaries are a derived, coherence-keyed cache; branch creation is
-      automated; stream branches are the human-maintained compatibility contract (Q7).
-- [x] Q8 discoverability — answered via build provenance / per-image SBOM, no
-      committed lockfile required.
-- [x] Base/platform generation cadence — resolved: a *fixed input*, not a design
-      variable. Fedora's existing ~6-month release / ~13-month maintenance model
-      (≈2 concurrent generations) is inherited as-is. Upgrade schedules are
-      independent per layer (principle 14); no coordinated mass-rebuild event, so
-      the cache-cost worry is naturally bounded.
-- [x] Derived binary cache — resolved: no cross-application sharing. RPM's
-      automatic buildroot dependencies make a binary reusable only with an
-      identical base *and* leading manifest set, which is rarely true — not worth
-      engineering. Each application has a private RPM repo; its cache is the builds
-      from its own manifest.
-- [x] Fill the full matrix: Q1–Q8 × {cargo, Go, Fedora today, Nix, Portage, Spack,
-      Fedora proposed}, with a "novel vs. borrowed" summary. Done — see section above.
-- [x] Federation — resolved: recursive platform-as-floor via base images (see
-      section). Overriding base libraries is fine for backward-compatible / stream
-      updates on a plain OCI image; no fork of the base needed.
-- [x] Defend the Q5+Q7 cell — all six anticipated maintainer challenges now have
-      responses (see section above). Core defenses: labor-is-scarcer-than-compute,
-      source-RPMs-for-reproduction/provenance, base-SBOM ∪ private-repo for
-      discoverability, EOL-tracking-as-a-needed-feature.
-- [x] Elevate the #6 vision — Fedora as provider of a *language-agnostic,
-      developer-first shared component registry* — now leads the document as the
-      *Vision* section; decoupling reframed as the mechanism that delivers it.
+- **Spine:** decouple applications from the OS (usability and security together); an
+  application layer on a classic base, not a replacement for the distribution.
+- **Workflow:** declare dependencies by source + stream; follow streams rather than
+  pin; treat the platform as a floor; ship applications as self-contained images.
+- **Component collection:** the shared collection is stream-branched *source*;
+  binaries are derived and private per application; branch creation is automated;
+  stream branches are the human-maintained compatibility contract.
+- **Discoverability:** build provenance / per-image SBOM (base SBOM ∪ private repo);
+  no committed lockfile required.
+- **Base cadence:** a fixed input — Fedora's existing ~6-month release / ~13-month
+  maintenance model (≈2 concurrent generations). Upgrade schedules are independent
+  per layer, so there is no coordinated mass-rebuild event.
+- **Binary cache:** no cross-application sharing (RPM's automatic buildroot
+  dependencies make it unreliable); each application has a private RPM repo scoped
+  to its own manifest.
+- **Federation:** recursive platform-as-floor via base images; overriding a
+  base-provided library is fine for backward-compatible / stream updates on a plain
+  OCI image, with no fork of the base needed.
+- **Comparison:** the full Q1–Q8 matrix across cargo, Go, Fedora (today), Nix,
+  Portage, Spack, and the proposed system, with a novel-vs-borrowed reading.
+- **Maintainer challenges:** five anticipated objections to the Q5+Q7 bet, each with
+  a response.
 
-Deferred (revisit only if Fedora asks):
-- Base-publisher trust *policy* — signing and who may publish an "official" base.
-  Mechanism and visibility are already covered by provenance/SBOM, so this is
-  policy only, not a blocker.
+## Open questions
+
+- **Base-publisher trust policy** — signing, and who may publish an "official" base.
+  The mechanism and visibility are already covered by provenance/SBOM, so this is a
+  policy question rather than a blocker. (Deferred unless Fedora asks.)
