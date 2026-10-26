@@ -1,21 +1,40 @@
-# Making Fedora's build system something developers *want* to use
+# Fedora as a developer-first build platform
 
 Working document. Status: brainstorm / early framing.
+(Also: making `mock` and `dist-git` tools developers *want* to use.)
+
+## Vision
+
+Fedora should grow from *a project that provides users with software* into *a
+project that also provides developers with the tools to build software*.
+Concretely: enable developers to **publish** software of their own and to
+**consume** the software they need with as little friction as PyPI, crates.io, or
+Go's decentralized publishing offer today — but with Fedora's strengths
+(human-maintained streams, build provenance, a coherent base) underneath.
+
+The vehicle is a **language-agnostic, developer-first shared component registry**:
+by carrying upstream-release branches in dist-git, Fedora gains a general-purpose
+build backend with the version and compatibility semantics developers already
+expect from language registries — a service the Linux ecosystem lacks today and
+that Fedora is well positioned to provide. The rest of this document works out the
+build-and-delivery model that makes that registry real.
 
 ## Problem statement
 
-The goal is **usability**: make `mock` and `dist-git` tools that developers
-actually want to reach for — not just tools that distro packagers tolerate.
+The near-term goal is **usability**: make `mock` and `dist-git` tools that
+developers actually want to reach for — not just tools that distro packagers
+tolerate. This is the concrete first step toward the vision above.
 
-**Thesis: decouple applications from the OS.** The deepest source of friction
+**Mechanism: decouple applications from the OS.** The deepest source of friction
 today is that applications are tightly coupled to the OS — they build against, and
 must move in lockstep with, whatever the distribution currently ships. That
 coupling is what makes Rawhide painful to build against, and it is also a security
 liability: an application that cannot advance its own components independently of
 the OS is an application that is hard to update, and hard-to-update software is
-insecure software. Letting applications decouple from the OS addresses both at
-once — it makes application builds easier *and* makes applications easier to keep
-patched.
+insecure software. Decoupling applications from the OS is the mechanism that
+delivers the vision — it makes application builds easier, makes applications easier
+to keep patched, and turns dist-git into the shared component registry described
+above.
 
 **Scope: this does not replace the distribution.** The base OS and its shared
 libraries still come from normal Fedora. What we are adding is an *application*
@@ -389,16 +408,12 @@ well the doc currently answers each.
    - **Response (bifurcation):** The cost is worth it. It lets applications move
      ahead without disrupting the stability of the underlying platform, and
      asynchronous application development is a large productivity benefit. More
-     importantly, providing upstream-release branches in dist-git yields a
-     **language-agnostic build backend** and a **general-purpose, developer-first
-     shared component registry** with the semantics developers expect from other
-     registries — an essential service missing from the Linux ecosystem today that
-     Fedora is well positioned to provide. This reflects a deliberate ambition: for
-     Fedora to grow from *a project that provides users with software* into *a
-     project that provides developers with the tools to build software* — enabling
-     developers to publish software of their own, and to consume the software they
-     need, with as little friction as PyPI, crates.io, or Go's decentralized
-     publishing offer today.
+     importantly, the bifurcation is what makes the **shared component registry**
+     possible — see the *Vision* section: providing upstream-release branches in
+     dist-git yields a language-agnostic build backend and a developer-first
+     registry, moving Fedora from *providing users with software* to *providing
+     developers with the tools to build software*. The second dependency world is
+     not a regrettable side effect; it is the deliverable.
 
 Status: all six have responses. The two that were previously unanswered (#2
 rebuild fan-out, #3 reproducibility/change-control) now rest on the same base:
@@ -437,8 +452,9 @@ registry), a candidate for the document's framing.
       responses (see section above). Core defenses: labor-is-scarcer-than-compute,
       source-RPMs-for-reproduction/provenance, base-SBOM ∪ private-repo for
       discoverability, EOL-tracking-as-a-needed-feature.
-- [ ] Consider elevating the #6 vision — Fedora as provider of a *language-agnostic,
-      developer-first shared component registry* — into the thesis / framing.
+- [x] Elevate the #6 vision — Fedora as provider of a *language-agnostic,
+      developer-first shared component registry* — now leads the document as the
+      *Vision* section; decoupling reframed as the mechanism that delivers it.
 
 Deferred (revisit only if Fedora asks):
 - Base-publisher trust *policy* — signing and who may publish an "official" base.
