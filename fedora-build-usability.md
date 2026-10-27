@@ -100,7 +100,10 @@ one while regressing the other is not acceptable.
 | System | Role in the comparison |
 |---|---|
 | **Cargo / crates.io** | Cleanest specimen of declared compatibility: author declares ranges in-tree, resolver (PubGrub) concretizes, lockfile pins exact + hash, multiple versions free & default, fetched at build. The "float-within-a-range" sub-model. |
+| **npm** | Like cargo but more aggressive on coexistence: nested `node_modules` let many versions of one package exist in a single tree. Range-based (`^`, `~`), `package-lock.json` pins exact + integrity hashes. The float-within-a-range model taken to its limit. |
+| **pip / PyPI** | Range-based (PEP 440) and author-declared, but **one version per environment** (flat, no nesting) — coexistence happens *across* virtualenvs, not within one. The closest ecosystem analogue to a distro's single-version environment, with per-project isolation layered on top (directly parallel to our one-per-image / many-across-images model). |
 | **Go modules** | "Name-a-stream" sub-model: import path *is* the repo URL, major version lives in the path (semantic import versioning), can reference a branch. **Guardrail:** default resolution is Minimal Version Selection — conservative, pinned in `go.mod`/`go.sum`; security fixes come via `go get -u` / `govulncheck`, not auto-floating. |
+| **Bazel** | A general build system, not a package ecosystem: hermetic, sandboxed, content-addressed caching, and (with bzlmod) MVS resolution against a committed `MODULE.bazel.lock`. The reference for *resolve-then-build-in-a-sandbox* and caching mechanics rather than registry/stream semantics — closest to our sealed-buildroot stance. |
 | **Fedora (mock + dist-git)** | The photographic negative. dist-git stores recipe + source artifact, not upstream constraints. mock/Koji build in a **network-isolated** buildroot; build-time third-party fetch is forbidden by design. Compatibility flattened to "whatever Fedora N ships." |
 | **Nix / Guix** | Dissolves single-vs-multi: a derivation *is* "incomplete software + exact content-hashed inputs"; `flake.lock` = whole-graph lockfile; multiple versions coexist in the store. Keeps a coherent set (nixpkgs) but with lockfile discipline. Still curator-declared compat (closer to Fedora on Q1/2/6). |
 | **Portage / Gentoo** | Richest *distro-native* constraint language: versioned deps, **SLOTs** (parallel versions), **USE flags** (conditional completion), and it fetches + builds from upstream at build time. Exposes the friction of wrapping cargo/npm (historic giant `CRATES=` lists). |
@@ -121,8 +124,8 @@ one while regressing the other is not acceptable.
   automates.
 
 - **Two language-ecosystem sub-models.** *Float-within-a-range* (cargo, npm, pip)
-  vs. *name-a-stream* (Go). Both beat Fedora's flattening, for different reasons,
-  and are worth keeping distinct.
+  vs. *name-a-stream / minimal-version-selection* (Go, Bazel). Both beat Fedora's
+  flattening, for different reasons, and are worth keeping distinct.
 
 - **The "one place to fix a CVE" justification conflates two things:**
   *topology* (how many copies exist) vs. *maintenance* (whether each copy is
@@ -312,7 +315,10 @@ is visible at a glance.
 | | Q1 Names deps | Q2 Declares compat | Q3 Completion site | Q4 Coexistence | Q5 Pinning | Q6 Integration work | Q7 Stream maint. | Q8 Discoverability |
 |---|---|---|---|---|---|---|---|---|
 | **Cargo** | upstream author | semver ranges, in-tree | registry fetch at build | free, default (multi) | Cargo.lock + hashes | upstream, CI-tested | yank + RustSec advisories | manifest (lock/SBOM) |
+| **npm** | upstream author | semver ranges, in-tree | registry fetch at install | free, default (nested) | package-lock.json + integrity | upstream, CI-tested | advisories; `npm audit` | manifest (lock/SBOM) |
+| **pip / PyPI** | upstream author | PEP 440 specifiers, in-tree | registry fetch at install | one per env; many across venvs | freeze / `*.lock` (opt. hashes) | upstream, CI-tested | yank (PEP 592); `pip-audit` | manifest (freeze/SBOM) |
 | **Go** | upstream; path = repo | min-version + major-in-path | proxy/VCS fetch at build | majors coexist; MVS within | go.mod + go.sum | upstream, CI; MVS deterministic | Go vuln DB (govulncheck) | manifest (go.sum/SBOM) |
+| **Bazel** | project author (MODULE) | bzlmod versions + MVS | fetch, then hermetic sandbox | MVS one; multi via override | `MODULE.bazel.lock` + hashes | project author; CI + remote exec | BCR; yanked versions | manifest (lockfile, CAS) |
 | **Fedora (today)** | distro packager | hand Requires; single version | sealed dnf buildroot | exception; hand-built compat | implicit buildroot tag | packager translates + patches | per-pkg CVE; `bundled()` | invariant (+ weak `bundled()`) |
 | **Nix / Guix** | expression author | curator-pinned version | hermetic source/substituter | free, default (store hashes) | CAS derivation; flake.lock | nixpkgs curators; Hydra CI | per-pkg; pin any version | manifest (closure, strong) |
 | **Portage** | ebuild maintainer | versioned deps, SLOT, USE | source fetch + build on host | SLOTs (blessed); else one | @world; no hash lock | maintainer; USE combinatorics | GLSA; slots keep old | mixed (installed DB) |
@@ -321,18 +327,29 @@ is visible at a glance.
 
 ### What's novel vs. borrowed
 
-- **Borrowed — Q1 (who names deps):** the proposal moves dependency naming to the
-  *application developer*, matching the language-ecosystem rows. It is the only
-  distro-side row to do so; this is the usability leap.
-- **Borrowed with a twist — Q2 (compatibility model):** we adopt Go's
-  *name-a-stream* model over cargo/Spack's numeric ranges, but the stream branch is
-  a **human-maintained** contract (Fedora maintainers). That maintained-ness is
-  what lets us drop pinning.
-- **Novel — Q5 + Q7 together:** every other "modern" row buys reproducibility with
-  a lockfile. The proposal is the only row that **drops committed pinning** (Q5 =
-  none) and instead relies on maintained streams (Q7) plus build provenance (Q8).
-  This is the most novel and most scrutinized cell: the claim is that *maintained
-  stream + provenance* substitutes for *lockfile*. The next section examines it.
+Read down the columns and the headline is **alignment**: most of the proposal's
+answers match what developers already expect from npm, pip, cargo, Go, and Bazel.
+The design is deliberately conventional where expectations exist, and distinctive
+in only one place.
+
+- **Borrowed — Q1 (who names deps):** dependency naming moves to the *application
+  developer*, matching every language-ecosystem row. It is the only distro-side row
+  to do so; this is the usability leap.
+- **Borrowed — Q2 (compatibility model):** compatibility is declared with the
+  source, as in all the ecosystem rows. We follow the Go/Bazel *name-a-stream / MVS*
+  style rather than cargo/npm/pip numeric ranges — with the twist that the stream
+  branch is a **human-maintained** contract, which is what lets us drop pinning.
+- **Borrowed — Q3 (resolve, then build in a sandbox):** resolving inputs and then
+  building in a sealed, hermetic environment is exactly the Bazel and Nix model, and
+  it keeps Fedora's existing buildroot isolation intact.
+- **Borrowed — Q4 (coexistence via isolation):** one version per build, many across
+  isolated environments, is the pip/venv model — our one-per-image,
+  many-across-images is the same idea.
+- **Novel — Q5 + Q7 together:** every other modern row records a committed lockfile.
+  The proposal is the only one that **drops committed pinning** (Q5 = none) and
+  instead relies on human-maintained streams (Q7) plus build provenance (Q8). This
+  is the one genuinely distinctive bet: that *maintained stream + provenance*
+  substitutes for *lockfile*. The next section examines it.
 
 ## Anticipated challenges from Fedora maintainers (the Q5+Q7 bet)
 
